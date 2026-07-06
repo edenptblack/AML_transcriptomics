@@ -1,0 +1,12 @@
+INFO [2026-07-06 13:47:20] $x
+INFO [2026-07-06 13:47:20] list(t_test = DEG_data_filtered$ID_REF, limmma = limma_results_filtered$ID_REF)
+INFO [2026-07-06 13:47:20] 
+INFO [2026-07-06 13:47:20] $category.names
+INFO [2026-07-06 13:47:20] c("T-test", "Limma")
+INFO [2026-07-06 13:47:20] 
+INFO [2026-07-06 13:47:20] $fill
+INFO [2026-07-06 13:47:20] c(alpha("red", 0.3), alpha("blue", 0.3))
+INFO [2026-07-06 13:47:20] 
+INFO [2026-07-06 13:47:20] $filename
+INFO [2026-07-06 13:47:20] NULL
+INFO [2026-07-06 13:47:20] 

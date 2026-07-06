@@ -1,0 +1,434 @@
+---
+title: "Differential expression in acute myeloid leukaemia (GSE9476): t-test vs limma"
+author: "Eden Black"
+output:
+  github_document:
+    html_preview: true
+    df_print: kable
+---
+
+This analysis identifies genes differentially expressed between acute myeloid
+leukaemia (AML) and healthy bone marrow / peripheral blood in the public
+microarray dataset GSE9476, and compares two ways of calling them — a per-gene
+t-test and the `limma` linear-model framework. Expression values are
+log2-transformed.
+
+## Data import
+
+```{r message = FALSE}
+library(tidyverse)
+
+# Read in datasets
+AML_data = read.csv('data/GSE9476_series_matrix.txt',
+                    header = TRUE,
+                    sep = '\t',
+                    fill = TRUE,
+                    comment.char = '!')
+
+AML_metadata = read.csv('data/GSE9476_meta_info.txt',
+                        header = TRUE,
+                        sep = '\t',
+                        fill = TRUE)
+
+# Convert metadata sample IDs and disease status to factors for later analysis
+AML_metadata$SampleID = as.factor(AML_metadata$SampleID)
+AML_metadata$Disease_status = as.factor(AML_metadata$Disease_status)
+```
+
+## Dataset overview
+
+Sample numbers per group are counted from the metadata (possible because
+`Disease_status` is a factor), and each probeset is one row of the expression
+table.
+
+```{r}
+disease_status_counts = AML_metadata %>%
+  group_by(Disease_status) %>%
+  summarise(disease_status_count = n())
+
+print(disease_status_counts)
+```
+
+```{r}
+probeset_number = nrow(AML_data)
+
+paste('There are', probeset_number, 'probesets in the dataset')
+```
+
+## Age as a covariate
+
+Before comparing expression, I checked whether the two groups are balanced on
+age, since an imbalance would be a potential confounder.
+
+```{r}
+t.test(Age ~ Disease_status, data = AML_metadata)
+```
+
+The groups differ significantly in age (p < 0.05), so age is a confounder to keep
+in mind when interpreting these results.
+
+## Exploratory analysis
+
+The expression table is checked for missing values, pivoted to long format, and
+joined to disease status so that each measurement is labelled AML or Control.
+
+```{r}
+sum(is.na(AML_data))
+```
+
+```{r}
+# Tidy gene expression data by pivoting it into long format
+AML_data_long = pivot_longer(
+  data = AML_data,
+  cols = GSM239170:GSM240509, # Exclude probe ID
+  names_to = 'SampleID', # Match col name in metadata for easier joining
+  values_to = 'Expression'
+)
+
+# Convert to factors for later analysis
+AML_data_long$ID_REF = as.factor(AML_data_long$ID_REF)
+AML_data_long$SampleID = as.factor(AML_data_long$SampleID)
+
+str(AML_data_long)
+```
+
+```{r}
+# Trim metadata to only SampleID (for join) and disease status
+metadata_for_join = AML_metadata %>%
+  select(SampleID, Disease_status)
+
+# Join disease status from metadata to tidy gene expression data
+AML_data_with_status = AML_data_long %>%
+  left_join(metadata_for_join, by = 'SampleID')
+
+str(AML_data_with_status)
+sum(is.na(AML_data_with_status))
+```
+
+A per-sample boxplot of expression, coloured by disease status, gives a quick
+view of overall distribution and any obvious outlier samples.
+
+```{r, fig.width = 10, fig.height = 5}
+ggplot(data = AML_data_with_status, aes(SampleID, Expression)) +
+  geom_boxplot(aes(color = Disease_status, alpha = 0.6)) +
+  scale_color_manual(values = c('AML' = 'red', 'Control' = 'blue')) +
+  labs(title = 'Gene expression in AML and healthy samples',
+       y = 'log2 Gene Expression',
+       x = 'Sample ID',
+       color = 'Disease Status') +
+  scale_x_discrete(guide = guide_axis(angle = 90)) # Align x axis labels
+```
+
+## Per-gene summary statistics
+
+For each probeset, summary statistics (mean, SD, min, max) are computed within
+each group, then joined and used to derive a log2 fold change (mean AML − mean
+Control).
+
+```{r}
+# Summarise AML data
+AML_data_summary_stats = AML_data_with_status %>%
+  filter(Disease_status == 'AML') %>%
+  group_by(ID_REF) %>%
+  summarise(mean_AML = mean(Expression),
+            sd_AML = sd(Expression),
+            min_AML = min(Expression),
+            max_AML = max(Expression))
+
+head(AML_data_summary_stats)
+```
+
+```{r}
+# Summarise control data
+control_data_summary_stats = AML_data_with_status %>%
+  filter(Disease_status == 'Control') %>%
+  group_by(ID_REF) %>%
+  summarise(mean_Control = mean(Expression),
+            sd_Control = sd(Expression),
+            min_Control = min(Expression),
+            max_Control = max(Expression))
+
+head(control_data_summary_stats)
+```
+
+```{r}
+# Join tables to create full summary stats for each gene
+full_data_summary_stats = AML_data_summary_stats %>%
+  full_join(control_data_summary_stats, by = 'ID_REF')
+
+# Add column for fold change (mean_AML - mean_control)
+full_data_summary_stats = full_data_summary_stats %>%
+  mutate(Fold_change = mean_AML - mean_Control)
+
+str(full_data_summary_stats)
+sum(is.na(full_data_summary_stats))
+```
+
+A scatterplot of mean AML vs mean Control expression shows the relationship is
+highly linear — most genes sit on the y = x line, and the genes that stray from
+it are the candidates of interest.
+
+```{r}
+# Create scatter plot
+ggplot(full_data_summary_stats, aes(mean_Control, mean_AML)) +
+  geom_point(alpha = 0.4) +
+  labs(title = 'Mean expression of genes in AML vs control samples',
+       x = 'Mean log2 gene expression in control samples',
+       y = 'Mean log2 gene expression in AML samples')
+```
+
+```{r}
+# T-test for difference in overall mean gene expression in AML vs control
+t.test(full_data_summary_stats$mean_AML,
+       full_data_summary_stats$mean_Control)
+```
+
+As expected, overall gene expression is not shifted up or down between groups —
+the signal of interest is in individual genes, not the global mean.
+
+## Differential expression: per-gene t-tests
+
+A t-test of expression by disease status is run for every probeset, and the
+t-score and p-value are joined onto the summary-statistics table.
+
+```{r}
+t_test_table = AML_data_with_status %>%
+  group_by(ID_REF) %>%
+  mutate(t_score = t.test(Expression ~ Disease_status)$statistic, # Extract t-score into column
+         p_value = t.test(Expression ~ Disease_status)$p.value) # Extract p-value into column
+```
+
+```{r}
+full_data_with_t_test = t_test_table %>%
+  select(ID_REF, t_score, p_value) %>%
+  group_by(ID_REF) %>%
+  full_join(full_data_summary_stats, by = 'ID_REF') %>%
+  unique() %>% # Remove duplicate rows
+  ungroup # Remove grouping to avoid problems later
+
+str(full_data_with_t_test)
+sum(is.na(full_data_with_t_test))
+```
+
+Before calling DEGs, probesets are restricted to those reliably expressed and not
+saturated. Requiring mean expression above 3 in both groups leaves:
+
+```{r}
+filter_a = nrow(full_data_with_t_test %>%
+                  filter(mean_AML > 3 & mean_Control > 3))
+
+paste('There are', filter_a, 'probesets remaining after filter a')
+```
+
+Requiring maximum expression below 14 in at least one group leaves:
+
+```{r}
+filter_b = nrow(full_data_with_t_test %>%
+                  filter(max_AML < 14 | max_Control < 14))
+
+paste('There are', filter_b, 'probesets remaining after filter b')
+```
+
+Applying both criteria together — the more stringent, combined filter carried
+forward — leaves:
+
+```{r}
+filter_c = nrow(full_data_with_t_test %>%
+                  filter((mean_AML > 3 & mean_Control > 3) &
+                           (max_AML < 14 | max_Control < 14)))
+
+paste('There are', filter_c, 'probesets remaining after filter c')
+```
+
+The combined expression filter is applied, then DEGs are called as probesets with
+p < 0.05 and |log2 fold change| > 1.
+
+```{r}
+DEG_data_filter_c = full_data_with_t_test %>%
+  filter((mean_AML > 3 & mean_Control > 3) &
+           (max_AML < 14 | max_Control < 14))
+
+dim(DEG_data_filter_c)
+```
+
+```{r}
+DEG_data_filtered = DEG_data_filter_c %>%
+  filter(p_value < 0.05 & abs(Fold_change) > 1)
+
+str(DEG_data_filtered)
+sum(is.na(DEG_data_filtered))
+```
+
+```{r}
+paste('There are',
+      nrow(DEG_data_filtered),
+      'differentially expressed genes in the dataset')
+```
+
+Splitting the DEGs by the sign of the fold change gives the up- and
+down-regulated counts.
+
+```{r}
+upregulated_DEGs = DEG_data_filtered %>%
+  filter(Fold_change > 0)
+
+# Number upregulated
+paste('There are',
+      nrow(upregulated_DEGs),
+      'upregulated DEGs in the dataset')
+
+downregulated_DEGs = DEG_data_filtered %>%
+  filter(Fold_change < 0)
+
+# Number downregulated
+paste('There are',
+      nrow(downregulated_DEGs),
+      'downregulated DEGs in the dataset')
+```
+
+The ten most up- and down-regulated DEGs by fold change:
+
+```{r}
+# 10 most upregulated DEGs with p-value, log2FC, and mean values
+top_10_upregulated_DEGs = DEG_data_filtered %>%
+  slice_max(order_by = Fold_change, n = 10) %>%
+  select(ID_REF, p_value, Fold_change, mean_Control, mean_AML)
+
+top_10_upregulated_DEGs
+```
+
+```{r}
+# 10 most downregulated DEGs with p-value, log2FC, and mean values
+top_10_downregulated_DEGs = DEG_data_filtered %>%
+  slice_min(order_by = Fold_change, n = 10) %>%
+  select(ID_REF, p_value, Fold_change, mean_Control, mean_AML)
+
+top_10_downregulated_DEGs
+```
+
+## Differential expression: limma
+
+The same DEG definition is applied using `limma`. The expression matrix is
+prepared (probeset IDs as row names), a design matrix is built from disease
+status, and a linear model is fitted with the contrast AML − Control.
+
+```{r}
+AML_data_limma = AML_data
+rownames(AML_data_limma) = AML_data_limma$ID_REF # Apply ID_REF to row names
+AML_data_limma$ID_REF = NULL # Remove old ID_REF column
+```
+
+```{r message = FALSE}
+library(limma)
+
+# Create design matrix based on metadata
+design = model.matrix(~ 0 + AML_metadata$Disease_status)
+colnames(design) = levels(AML_metadata$Disease_status)
+```
+
+```{r}
+fit = limma::lmFit(AML_data_limma, design)
+
+contrast.matrix = limma::makeContrasts(AML_vs_Control =
+                                  AML - Control, levels = design)
+
+fit2 = limma::contrasts.fit(fit, contrast.matrix)
+fit2 = limma::eBayes(fit2)
+
+limma_results = limma::topTable(fit2,
+                   coef = 'AML_vs_Control',
+                   adjust.method = 'BH',
+                   sort.by = 'P',
+                   n = Inf)
+
+str(limma_results)
+sum(is.na(limma_results))
+```
+
+The limma results are joined to the summary-statistics table and put through the
+same filters as the t-test approach, for a like-for-like comparison: mean > 3 in
+both groups, max < 14 in at least one group, p < 0.05, and |log2 fold change| > 1.
+
+```{r}
+# Create ID_REF column in limma results to join on
+limma_results$ID_REF = rownames(limma_results)
+
+# Join limma_results with summary stat data for further filtering
+full_data_with_limma = limma_results %>%
+  select(ID_REF, logFC, P.Value, adj.P.Val) %>%
+  group_by(ID_REF) %>%
+  full_join(full_data_summary_stats, by = 'ID_REF') %>%
+  unique() %>% # Remove duplicate rows
+  ungroup # Remove grouping to avoid problems later
+
+str(full_data_with_limma)
+sum(is.na(full_data_with_limma))
+```
+
+```{r}
+limma_results_filtered = full_data_with_limma %>%
+  filter((mean_AML > 3 & mean_Control > 3) &
+           (max_AML < 14 | max_Control < 14) &
+              P.Value < 0.05 & abs(logFC) > 1)
+
+str(limma_results_filtered)
+sum(is.na(limma_results_filtered))
+```
+
+```{r}
+paste('There are', nrow(limma_results_filtered), 'DEGs in the dataset')
+```
+
+## Comparing the two methods
+
+An inner join between the two DEG sets counts the genes identified by both
+methods.
+
+```{r}
+# Identify DEGs in both methods using inner join
+DEGs_limma_and_t_test = DEG_data_filtered %>%
+  inner_join(limma_results_filtered, by = 'ID_REF')
+
+overlapped_gene_count = nrow(DEGs_limma_and_t_test)
+
+paste('There are', overlapped_gene_count, 'overlapped genes')
+```
+
+The overlap is visualised as a Venn diagram.
+
+```{r}
+library(VennDiagram)
+
+# Create Venn diagram
+grid.newpage()
+grid.draw(venn.diagram(x = list(t_test = DEG_data_filtered$ID_REF,
+                                limmma = limma_results_filtered$ID_REF),
+                        category.names = c('T-test', 'Limma'),
+                        fill = c(alpha('red',0.3),
+                                  alpha('blue',0.3)),
+                       filename = NULL))
+```
+
+The two methods agree on the large majority of DEGs, each identifying a small
+number the other does not. Those method-exclusive genes can be retrieved with
+anti-joins.
+
+```{r}
+t_test_exclusive_DEGs = DEG_data_filtered %>%
+  anti_join(limma_results_filtered, by = 'ID_REF')
+
+print(t_test_exclusive_DEGs)
+```
+
+```{r}
+limma_exclusive_DEGs = limma_results_filtered %>%
+  anti_join(DEG_data_filtered, by = 'ID_REF')
+
+print(limma_exclusive_DEGs)
+```
+
+## Session information
+
+```{r}
+sessionInfo()
+```
