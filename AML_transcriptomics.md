@@ -102,6 +102,11 @@ colSums(is.na(AML_metadata))
     ##       SampleID           Desc Disease_status            Age 
     ##              0              0              0             14
 
+The metadata is missing age information for 14/64 samples; age will
+therefore not be used as a confounder in statistical testing. This
+introduces the possibility of DEGs reflecting age rather than disease
+state, which must be kept in mind during interpretation.
+
 ``` r
 # Tidy gene expression data by pivoting it into long format
 AML_data_long = pivot_longer(
@@ -671,21 +676,21 @@ grid.draw(venn.diagram(x = list(t_test = DEG_data_filtered$ID_REF,
                        disable.logging = TRUE))
 ```
 
-    ## INFO [2026-07-08 09:57:09] $x
-    ## INFO [2026-07-08 09:57:09] list(t_test = DEG_data_filtered$ID_REF, limma = limma_results_filtered$ID_REF)
-    ## INFO [2026-07-08 09:57:09] 
-    ## INFO [2026-07-08 09:57:09] $category.names
-    ## INFO [2026-07-08 09:57:09] c("T-test", "Limma")
-    ## INFO [2026-07-08 09:57:09] 
-    ## INFO [2026-07-08 09:57:09] $fill
-    ## INFO [2026-07-08 09:57:09] c(alpha("red", 0.3), alpha("blue", 0.3))
-    ## INFO [2026-07-08 09:57:09] 
-    ## INFO [2026-07-08 09:57:09] $filename
-    ## INFO [2026-07-08 09:57:09] NULL
-    ## INFO [2026-07-08 09:57:09] 
-    ## INFO [2026-07-08 09:57:09] $disable.logging
-    ## INFO [2026-07-08 09:57:09] [1] TRUE
-    ## INFO [2026-07-08 09:57:09]
+    ## INFO [2026-07-08 10:01:06] $x
+    ## INFO [2026-07-08 10:01:06] list(t_test = DEG_data_filtered$ID_REF, limma = limma_results_filtered$ID_REF)
+    ## INFO [2026-07-08 10:01:06] 
+    ## INFO [2026-07-08 10:01:06] $category.names
+    ## INFO [2026-07-08 10:01:06] c("T-test", "Limma")
+    ## INFO [2026-07-08 10:01:06] 
+    ## INFO [2026-07-08 10:01:06] $fill
+    ## INFO [2026-07-08 10:01:06] c(alpha("red", 0.3), alpha("blue", 0.3))
+    ## INFO [2026-07-08 10:01:06] 
+    ## INFO [2026-07-08 10:01:06] $filename
+    ## INFO [2026-07-08 10:01:06] NULL
+    ## INFO [2026-07-08 10:01:06] 
+    ## INFO [2026-07-08 10:01:06] $disable.logging
+    ## INFO [2026-07-08 10:01:06] [1] TRUE
+    ## INFO [2026-07-08 10:01:06]
 
 ![](AML_transcriptomics_files/figure-gfm/unnamed-chunk-32-1.png)<!-- -->
 

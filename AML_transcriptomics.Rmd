@@ -67,6 +67,7 @@ The expression table is checked for missing values, pivoted to long format, and 
 sum(is.na(AML_data))
 colSums(is.na(AML_metadata))
 ```
+The metadata is missing age information for 14/64 samples; age will therefore not be used as a confounder in statistical testing. This introduces the possibility of DEGs reflecting age rather than disease state, which must be kept in mind during interpretation.
 
 ```{r}
 # Tidy gene expression data by pivoting it into long format
