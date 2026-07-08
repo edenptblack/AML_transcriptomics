@@ -96,6 +96,13 @@ sum(is.na(AML_data))
     ## [1] 0
 
 ``` r
+colSums(is.na(AML_metadata))
+```
+
+    ##       SampleID           Desc Disease_status            Age 
+    ##              0              0              0             14
+
+``` r
 # Tidy gene expression data by pivoting it into long format
 AML_data_long = pivot_longer(
   data = AML_data,
@@ -151,6 +158,7 @@ ggplot(data = AML_data_with_status, aes(SampleID, Expression)) +
        y = 'log2 Gene Expression',
        x = 'Sample ID',
        color = 'Disease Status') +
+  guides(alpha = 'none') +
   scale_x_discrete(guide = guide_axis(angle = 90)) # Align x axis labels
 ```
 
@@ -245,8 +253,8 @@ sum(is.na(full_data_summary_stats))
     ## [1] 0
 
 A scatterplot of mean AML vs mean Control expression shows the
-relationship is highly linear — most genes sit on the y = x line, and
-the genes that stray from it are the candidates of interest.
+relationship is highly linear — most genes sit on the y = x line. The
+genes that stray from it are the candidates of interest.
 
 ``` r
 # Create scatter plot
@@ -278,8 +286,7 @@ t.test(full_data_summary_stats$mean_AML,
     ##  5.091984  5.109899
 
 As expected, overall gene expression is not shifted up or down between
-groups — the signal of interest is in individual genes, not the global
-mean.
+groups. The signal is in individual genes, not the global mean.
 
 ## Differential expression: per-gene t-tests
 
@@ -299,12 +306,13 @@ full_data_with_t_test = t_test_table %>%
   group_by(ID_REF) %>%
   full_join(full_data_summary_stats, by = 'ID_REF') %>%
   unique() %>% # Remove duplicate rows
-  ungroup # Remove grouping to avoid problems later
+  ungroup %>% # Remove grouping to avoid problems later
+  mutate(p_adj = p.adjust(p_value, method = 'BH'))
 
 str(full_data_with_t_test)
 ```
 
-    ## tibble [22,283 × 12] (S3: tbl_df/tbl/data.frame)
+    ## tibble [22,283 × 13] (S3: tbl_df/tbl/data.frame)
     ##  $ ID_REF      : Factor w/ 22283 levels "1007_s_at","1053_at",..: 1 2 3 4 5 6 7 8 9 10 ...
     ##  $ t_score     : Named num [1:22283] 1.35 -1.4 -2.14 3.38 1.37 ...
     ##   ..- attr(*, "names")= chr [1:22283] "t" "t" "t" "t" ...
@@ -318,6 +326,7 @@ str(full_data_with_t_test)
     ##  $ min_Control : num [1:22283] 2.84 5.93 3.92 6.77 2.1 ...
     ##  $ max_Control : num [1:22283] 3.45 8.14 12.36 8.02 2.51 ...
     ##  $ Fold_change : num [1:22283] 0.0814 -0.1737 -1.1231 0.2733 0.0258 ...
+    ##  $ p_adj       : num [1:22283] 0.3544 0.3346 0.1586 0.0231 0.3456 ...
 
 ``` r
 sum(is.na(full_data_with_t_test))
@@ -349,8 +358,7 @@ paste('There are', filter_b, 'probesets remaining after filter b')
 
     ## [1] "There are 22171 probesets remaining after filter b"
 
-Applying both criteria together — the more stringent, combined filter
-carried forward — leaves:
+Applying both criteria together leaves:
 
 ``` r
 filter_c = nrow(full_data_with_t_test %>%
@@ -363,7 +371,7 @@ paste('There are', filter_c, 'probesets remaining after filter c')
     ## [1] "There are 15914 probesets remaining after filter c"
 
 The combined expression filter is applied, then DEGs are called as
-probesets with p \< 0.05 and \|log2 fold change\| \> 1.
+probesets with p_adj \< 0.05 and \|log2 fold change\| \> 1.
 
 ``` r
 DEG_data_filter_c = full_data_with_t_test %>%
@@ -373,29 +381,30 @@ DEG_data_filter_c = full_data_with_t_test %>%
 dim(DEG_data_filter_c)
 ```
 
-    ## [1] 15914    12
+    ## [1] 15914    13
 
 ``` r
 DEG_data_filtered = DEG_data_filter_c %>%
-  filter(p_value < 0.05 & abs(Fold_change) > 1)
+  filter(p_adj < 0.05 & abs(Fold_change) > 1)
 
 str(DEG_data_filtered)
 ```
 
-    ## tibble [626 × 12] (S3: tbl_df/tbl/data.frame)
-    ##  $ ID_REF      : Factor w/ 22283 levels "1007_s_at","1053_at",..: 3 130 189 193 194 264 294 344 451 463 ...
-    ##  $ t_score     : Named num [1:626] -2.14 -4.97 5.23 -3.28 -3.25 ...
-    ##   ..- attr(*, "names")= chr [1:626] "t" "t" "t" "t" ...
-    ##  $ p_value     : num [1:626] 3.60e-02 3.00e-05 4.26e-06 2.73e-03 1.88e-03 ...
-    ##  $ mean_AML    : num [1:626] 5.35 4.92 9.94 6.7 8.08 ...
-    ##  $ sd_AML      : num [1:626] 1.543 2.17 0.836 2.416 1.111 ...
-    ##  $ min_AML     : num [1:626] 3.96 2.91 7.67 2.94 6.4 ...
-    ##  $ max_AML     : num [1:626] 9.64 8.71 11.38 10.92 11.33 ...
-    ##  $ mean_Control: num [1:626] 6.48 7.1 8.91 8.31 9.11 ...
-    ##  $ sd_Control  : num [1:626] 2.634 0.633 0.654 0.809 1.437 ...
-    ##  $ min_Control : num [1:626] 3.92 5.4 7.3 6.88 7.79 ...
-    ##  $ max_Control : num [1:626] 12.36 8.28 9.92 9.77 13.32 ...
-    ##  $ Fold_change : num [1:626] -1.12 -2.18 1.02 -1.61 -1.04 ...
+    ## tibble [507 × 13] (S3: tbl_df/tbl/data.frame)
+    ##  $ ID_REF      : Factor w/ 22283 levels "1007_s_at","1053_at",..: 130 189 193 194 264 294 344 463 493 511 ...
+    ##  $ t_score     : Named num [1:507] -4.97 5.23 -3.28 -3.25 8.76 ...
+    ##   ..- attr(*, "names")= chr [1:507] "t" "t" "t" "t" ...
+    ##  $ p_value     : num [1:507] 3.00e-05 4.26e-06 2.73e-03 1.88e-03 1.09e-11 ...
+    ##  $ mean_AML    : num [1:507] 4.92 9.94 6.7 8.08 11.58 ...
+    ##  $ sd_AML      : num [1:507] 2.17 0.836 2.416 1.111 0.486 ...
+    ##  $ min_AML     : num [1:507] 2.91 7.67 2.94 6.4 10.72 ...
+    ##  $ max_AML     : num [1:507] 8.71 11.38 10.92 11.33 12.41 ...
+    ##  $ mean_Control: num [1:507] 7.1 8.91 8.31 9.11 10.54 ...
+    ##  $ sd_Control  : num [1:507] 0.633 0.654 0.809 1.437 0.44 ...
+    ##  $ min_Control : num [1:507] 5.4 7.3 6.88 7.79 9.42 ...
+    ##  $ max_Control : num [1:507] 8.28 9.92 9.77 13.32 11.23 ...
+    ##  $ Fold_change : num [1:507] -2.18 1.02 -1.61 -1.04 1.04 ...
+    ##  $ p_adj       : num [1:507] 1.77e-03 4.60e-04 3.37e-02 2.66e-02 1.36e-07 ...
 
 ``` r
 sum(is.na(DEG_data_filtered))
@@ -409,7 +418,7 @@ paste('There are',
       'differentially expressed genes in the dataset')
 ```
 
-    ## [1] "There are 626 differentially expressed genes in the dataset"
+    ## [1] "There are 507 differentially expressed genes in the dataset"
 
 Splitting the DEGs by the sign of the fold change gives the up- and
 down-regulated counts.
@@ -424,7 +433,7 @@ paste('There are',
       'upregulated DEGs in the dataset')
 ```
 
-    ## [1] "There are 136 upregulated DEGs in the dataset"
+    ## [1] "There are 102 upregulated DEGs in the dataset"
 
 ``` r
 downregulated_DEGs = DEG_data_filtered %>%
@@ -436,7 +445,7 @@ paste('There are',
       'downregulated DEGs in the dataset')
 ```
 
-    ## [1] "There are 490 downregulated DEGs in the dataset"
+    ## [1] "There are 405 downregulated DEGs in the dataset"
 
 The ten most up- and down-regulated DEGs by fold change:
 
@@ -460,9 +469,9 @@ top_10_upregulated_DEGs
 | 206067_s_at | 0.0000014 |    2.337609 |     4.054346 |  6.391956 |
 | 201105_at   | 0.0000000 |    2.236181 |     9.891301 | 12.127482 |
 | 205131_x_at | 0.0008269 |    2.150490 |     4.204067 |  6.354558 |
-| 214575_s_at | 0.0063934 |    2.147387 |     5.959960 |  8.107346 |
 | 205382_s_at | 0.0008141 |    2.146922 |     7.931564 | 10.078486 |
 | 211709_s_at | 0.0003427 |    2.107120 |     6.624619 |  8.731739 |
+| 216268_s_at | 0.0000009 |    2.061418 |     3.929634 |  5.991053 |
 
 </div>
 
@@ -497,7 +506,8 @@ top_10_downregulated_DEGs
 The same DEG definition is applied using `limma`. The expression matrix
 is prepared (probeset IDs as row names), a design matrix is built from
 disease status, and a linear model is fitted with the contrast AML −
-Control.
+Control. As 14 of the 64 patients had no age data available, age was not
+included in the model as a confounder.
 
 ``` r
 AML_data_limma = AML_data
@@ -547,8 +557,8 @@ sum(is.na(limma_results))
 
 The limma results are joined to the summary-statistics table and put
 through the same filters as the t-test approach, for a like-for-like
-comparison: mean \> 3 in both groups, max \< 14 in at least one group, p
-\< 0.05, and \|log2 fold change\| \> 1.
+comparison: mean \> 3 in both groups, max \< 14 in at least one group,
+p_adj \< 0.05, and \|log2 fold change\| \> 1.
 
 ``` r
 # Create ID_REF column in limma results to join on
@@ -590,25 +600,25 @@ sum(is.na(full_data_with_limma))
 limma_results_filtered = full_data_with_limma %>%
   filter((mean_AML > 3 & mean_Control > 3) &
            (max_AML < 14 | max_Control < 14) &
-              P.Value < 0.05 & abs(logFC) > 1)
+              adj.P.Val < 0.05 & abs(logFC) > 1)
 
 str(limma_results_filtered)
 ```
 
-    ## tibble [626 × 13] (S3: tbl_df/tbl/data.frame)
-    ##  $ ID_REF      : chr [1:626] "212224_at" "202478_at" "209586_s_at" "219624_at" ...
-    ##  $ logFC       : num [1:626] -3.7 -3.21 -1.38 1.82 1.04 ...
-    ##  $ P.Value     : num [1:626] 1.20e-14 3.79e-14 4.56e-14 1.98e-13 6.31e-13 ...
-    ##  $ adj.P.Val   : num [1:626] 2.67e-10 3.39e-10 3.39e-10 1.10e-09 2.81e-09 ...
-    ##  $ mean_AML    : num [1:626] 5.01 3.47 6.77 5.54 11.58 ...
-    ##  $ sd_AML      : num [1:626] 1.981 1.766 0.697 1.175 0.486 ...
-    ##  $ min_AML     : num [1:626] 2.67 2.36 5.49 3.5 10.72 ...
-    ##  $ max_AML     : num [1:626] 8.75 8.16 8.24 7.69 12.41 ...
-    ##  $ mean_Control: num [1:626] 8.71 6.67 8.15 3.72 10.54 ...
-    ##  $ sd_Control  : num [1:626] 0.979 0.878 0.456 0.289 0.44 ...
-    ##  $ min_Control : num [1:626] 6.51 3.73 6.7 3.38 9.42 ...
-    ##  $ max_Control : num [1:626] 10.56 8.6 8.9 4.73 11.23 ...
-    ##  $ Fold_change : num [1:626] -3.7 -3.21 -1.38 1.82 1.04 ...
+    ## tibble [512 × 13] (S3: tbl_df/tbl/data.frame)
+    ##  $ ID_REF      : chr [1:512] "212224_at" "202478_at" "209586_s_at" "219624_at" ...
+    ##  $ logFC       : num [1:512] -3.7 -3.21 -1.38 1.82 1.04 ...
+    ##  $ P.Value     : num [1:512] 1.20e-14 3.79e-14 4.56e-14 1.98e-13 6.31e-13 ...
+    ##  $ adj.P.Val   : num [1:512] 2.67e-10 3.39e-10 3.39e-10 1.10e-09 2.81e-09 ...
+    ##  $ mean_AML    : num [1:512] 5.01 3.47 6.77 5.54 11.58 ...
+    ##  $ sd_AML      : num [1:512] 1.981 1.766 0.697 1.175 0.486 ...
+    ##  $ min_AML     : num [1:512] 2.67 2.36 5.49 3.5 10.72 ...
+    ##  $ max_AML     : num [1:512] 8.75 8.16 8.24 7.69 12.41 ...
+    ##  $ mean_Control: num [1:512] 8.71 6.67 8.15 3.72 10.54 ...
+    ##  $ sd_Control  : num [1:512] 0.979 0.878 0.456 0.289 0.44 ...
+    ##  $ min_Control : num [1:512] 6.51 3.73 6.7 3.38 9.42 ...
+    ##  $ max_Control : num [1:512] 10.56 8.6 8.9 4.73 11.23 ...
+    ##  $ Fold_change : num [1:512] -3.7 -3.21 -1.38 1.82 1.04 ...
 
 ``` r
 sum(is.na(limma_results_filtered))
@@ -620,7 +630,7 @@ sum(is.na(limma_results_filtered))
 paste('There are', nrow(limma_results_filtered), 'DEGs in the dataset')
 ```
 
-    ## [1] "There are 626 DEGs in the dataset"
+    ## [1] "There are 512 DEGs in the dataset"
 
 ## Comparing the two methods
 
@@ -637,7 +647,7 @@ overlapped_gene_count = nrow(DEGs_limma_and_t_test)
 paste('There are', overlapped_gene_count, 'overlapped genes')
 ```
 
-    ## [1] "There are 620 overlapped genes"
+    ## [1] "There are 490 overlapped genes"
 
 The overlap is visualised as a Venn diagram.
 
@@ -653,12 +663,29 @@ library(VennDiagram)
 # Create Venn diagram
 grid.newpage()
 grid.draw(venn.diagram(x = list(t_test = DEG_data_filtered$ID_REF,
-                                limmma = limma_results_filtered$ID_REF),
+                                limma = limma_results_filtered$ID_REF),
                         category.names = c('T-test', 'Limma'),
                         fill = c(alpha('red',0.3),
                                   alpha('blue',0.3)),
-                       filename = NULL))
+                       filename = NULL,
+                       disable.logging = TRUE))
 ```
+
+    ## INFO [2026-07-08 09:57:09] $x
+    ## INFO [2026-07-08 09:57:09] list(t_test = DEG_data_filtered$ID_REF, limma = limma_results_filtered$ID_REF)
+    ## INFO [2026-07-08 09:57:09] 
+    ## INFO [2026-07-08 09:57:09] $category.names
+    ## INFO [2026-07-08 09:57:09] c("T-test", "Limma")
+    ## INFO [2026-07-08 09:57:09] 
+    ## INFO [2026-07-08 09:57:09] $fill
+    ## INFO [2026-07-08 09:57:09] c(alpha("red", 0.3), alpha("blue", 0.3))
+    ## INFO [2026-07-08 09:57:09] 
+    ## INFO [2026-07-08 09:57:09] $filename
+    ## INFO [2026-07-08 09:57:09] NULL
+    ## INFO [2026-07-08 09:57:09] 
+    ## INFO [2026-07-08 09:57:09] $disable.logging
+    ## INFO [2026-07-08 09:57:09] [1] TRUE
+    ## INFO [2026-07-08 09:57:09]
 
 ![](AML_transcriptomics_files/figure-gfm/unnamed-chunk-32-1.png)<!-- -->
 
@@ -673,16 +700,28 @@ t_test_exclusive_DEGs = DEG_data_filtered %>%
 print(t_test_exclusive_DEGs)
 ```
 
-    ## # A tibble: 6 × 12
-    ##   ID_REF t_score p_value mean_AML sd_AML min_AML max_AML mean_Control sd_Control
-    ##   <fct>    <dbl>   <dbl>    <dbl>  <dbl>   <dbl>   <dbl>        <dbl>      <dbl>
-    ## 1 117_at   -2.14  0.0360     5.35   1.54    3.96    9.64         6.48       2.63
-    ## 2 20412…    2.16  0.0353    10.9    1.30    8.83   13.2          9.63       3.31
-    ## 3 20503…   -2.03  0.0469     5.91   2.10    3.98   10.6          7.27       3.27
-    ## 4 20540…   -2.13  0.0372     5.34   1.53    3.90    9.37         6.49       2.76
-    ## 5 20549…   -2.01  0.0494     4.65   1.96    2.48    9.22         6.04       3.53
-    ## 6 20769…   -2.04  0.0461     6.58   1.66    4.76   10.1          7.64       2.49
-    ## # ℹ 3 more variables: min_Control <dbl>, max_Control <dbl>, Fold_change <dbl>
+    ## # A tibble: 17 × 13
+    ##    ID_REF      t_score p_value mean_AML sd_AML min_AML max_AML mean_Control
+    ##    <fct>         <dbl>   <dbl>    <dbl>  <dbl>   <dbl>   <dbl>        <dbl>
+    ##  1 202983_at     -2.94 0.00458     6.26  1.11     4.15    8.40         7.29
+    ##  2 203907_s_at   -3.00 0.00389     5.79  1.07     4.14    8.62         6.85
+    ##  3 204891_s_at   -2.95 0.00448     4.61  1.98     2.99    9.58         6.54
+    ##  4 205837_s_at   -3.01 0.00442     3.81  0.375    3.19    4.61         4.86
+    ##  5 205931_s_at   -3.09 0.00326     3.70  1.04     2.68    6.86         5.19
+    ##  6 206222_at     -3.03 0.00428     4.81  0.439    4.32    6.21         6.16
+    ##  7 206707_x_at   -2.95 0.00444     7.56  1.20     5.47    9.63         8.70
+    ##  8 207008_at     -3.02 0.00439     4.29  0.717    3.48    6.63         6.17
+    ##  9 209183_s_at   -2.94 0.00482     4.54  0.873    3.55    6.90         5.59
+    ## 10 209791_at     -3.08 0.00344     4.02  0.653    3.28    6.11         5.14
+    ## 11 211163_s_at   -3.03 0.00427     3.41  0.489    3.01    5.24         5.03
+    ## 12 211806_s_at   -3.19 0.00272     5.39  0.460    4.38    6.26         6.51
+    ## 13 216252_x_at   -2.97 0.00457     4.11  0.779    3.36    6.58         5.18
+    ## 14 218614_at     -3.02 0.00379     6.62  0.973    4.23    8.05         7.76
+    ## 15 219243_at     -2.96 0.00433     3.69  1.47     2.76    8.70         5.15
+    ## 16 221563_at      3.02 0.00372     7.81  1.25     3.96    9.55         6.58
+    ## 17 41469_at      -3.16 0.00305     3.22  0.288    2.87    4.25         4.29
+    ## # ℹ 5 more variables: sd_Control <dbl>, min_Control <dbl>, max_Control <dbl>,
+    ## #   Fold_change <dbl>, p_adj <dbl>
 
 ``` r
 limma_exclusive_DEGs = limma_results_filtered %>%
@@ -691,15 +730,20 @@ limma_exclusive_DEGs = limma_results_filtered %>%
 print(limma_exclusive_DEGs)
 ```
 
-    ## # A tibble: 6 × 13
-    ##   ID_REF    logFC P.Value adj.P.Val mean_AML sd_AML min_AML max_AML mean_Control
-    ##   <chr>     <dbl>   <dbl>     <dbl>    <dbl>  <dbl>   <dbl>   <dbl>        <dbl>
-    ## 1 216474_x…  1.21  0.0297     0.126     6.00   2.76    3.36    12.9         4.79
-    ## 2 218345_at  1.04  0.0318     0.131     6.75   2.33    4.47    11.9         5.71
-    ## 3 210254_at -1.25  0.0345     0.137     5.72   2.76    3.60    12.4         6.97
-    ## 4 202437_s… -1.02  0.0449     0.159     3.78   2.08    2.42    10.1         4.80
-    ## 5 209160_at -1.32  0.0454     0.160     7.07   2.69    2.20    11.6         8.39
-    ## 6 213844_at  1.21  0.0493     0.168     7.76   2.49    3.43    10.8         6.55
+    ## # A tibble: 22 × 13
+    ##    ID_REF   logFC P.Value adj.P.Val mean_AML sd_AML min_AML max_AML mean_Control
+    ##    <chr>    <dbl>   <dbl>     <dbl>    <dbl>  <dbl>   <dbl>   <dbl>        <dbl>
+    ##  1 201169_…  1.33 0.00131    0.0175     5.18   2.18    2.20    8.90         3.86
+    ##  2 204160_… -1.04 0.00213    0.0245     5.07   1.72    2.08    8.27         6.10
+    ##  3 210665_…  1.34 0.00214    0.0246     4.85   2.32    1.74    8.90         3.51
+    ##  4 212671_… -1.69 0.00220    0.0250     7.26   2.94    2.40   12.8          8.95
+    ##  5 218232_…  1.03 0.00248    0.0272     4.09   1.93    2.85    9.31         3.06
+    ##  6 217838_… -1.06 0.00324    0.0324     7.03   1.64    3.13    9.44         8.09
+    ##  7 200923_…  1.17 0.00329    0.0327     6.32   2.29    3.01    9.85         5.15
+    ##  8 214575_…  2.15 0.00350    0.0339     8.11   3.23    3.31   12.6          5.96
+    ##  9 208727_…  1.09 0.00356    0.0343     9.74   1.60    6.55   13.1          8.65
+    ## 10 204646_… -1.24 0.00356    0.0343     6.76   2.16    2.92   10.7          8.00
+    ## # ℹ 12 more rows
     ## # ℹ 4 more variables: sd_Control <dbl>, min_Control <dbl>, max_Control <dbl>,
     ## #   Fold_change <dbl>
 

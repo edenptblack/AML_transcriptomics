@@ -225,7 +225,7 @@ filter_c = nrow(full_data_with_t_test %>%
 paste('There are', filter_c, 'probesets remaining after filter c')
 ```
 
-The combined expression filter is applied, then DEGs are called as probesets with p < 0.05 and |log2 fold change| > 1.
+The combined expression filter is applied, then DEGs are called as probesets with p_adj < 0.05 and |log2 fold change| > 1.
 
 ```{r}
 DEG_data_filter_c = full_data_with_t_test %>%
@@ -326,7 +326,7 @@ str(limma_results)
 sum(is.na(limma_results))
 ```
 
-The limma results are joined to the summary-statistics table and put through the same filters as the t-test approach, for a like-for-like comparison: mean > 3 in both groups, max < 14 in at least one group, p < 0.05, and |log2 fold change| > 1.
+The limma results are joined to the summary-statistics table and put through the same filters as the t-test approach, for a like-for-like comparison: mean > 3 in both groups, max < 14 in at least one group, p_adj < 0.05, and |log2 fold change| > 1.
 
 ```{r}
 # Create ID_REF column in limma results to join on
